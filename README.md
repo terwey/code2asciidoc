@@ -2,12 +2,38 @@
 
 ## About
 
-code2asciidoc solves the problem where code samples for API’s are not properly
+code2asciidoc solves the problem where code samples for API's are not properly
 tested in most documentation.
 It leverages the Go testing framework by writing the sample in there, using
 the AsciiDoc tagging system and this tool joins it all together.
 
 When using gRPC best use it in conjunction with [proto2asciidoc](https://github.com/productsupcom/proto2asciidoc)
+
+## Installation
+
+### Using go install (Recommended)
+
+```bash
+go install github.com/productsupcom/code2asciidoc@latest
+```
+
+This installs the `code2asciidoc` binary to your `$GOPATH/bin` (or `$GOBIN` if set).
+
+### Using go tool
+
+You can also run it directly without installing:
+
+```bash
+go run github.com/productsupcom/code2asciidoc@latest --source examples/examples_test.go --dry-run
+```
+
+### Building from Source
+
+```bash
+git clone https://github.com/productsupcom/code2asciidoc.git
+cd code2asciidoc
+go build -o code2asciidoc .
+```
 
 ## Usage
 
@@ -135,7 +161,13 @@ func Test_ExampleSample1(t *testing.T) {
 You can produce the same output by doing:
 
 ``` shell
-code2asciidoc --source ${PWD}/examples/examples_test.go --out docs/generated/examples.adoc --run --f
+code2asciidoc --source examples/examples_test.go --out docs/generated/examples.adoc --run --f
+```
+
+Or using `go run` without installing:
+
+``` shell
+go run github.com/productsupcom/code2asciidoc@latest --source examples/examples_test.go --out docs/generated/examples.adoc --run --f
 ```
 
 The `--run` causes the tool to call the Go test-suite which will produce the
@@ -224,10 +256,22 @@ For generating **standalone pages**:
 
 ### Automation with go:generate
 
-You can automate generation using `go:generate` directives in your test files:
+You can automate generation using `go:generate` directives in your test files.
+
+**Option 1: Using installed binary**
 
 ```go
-//go:generate sh -c "code2asciidoc --source ${PWD}/client_example.go --out ../../docs/modules/ROOT/partials/generated/client_example.adoc --antora --no-header --skip-json --f && cp client_example.go ../../docs/modules/ROOT/examples/"
+//go:generate sh -c "code2asciidoc --source client_example.go --out ../../docs/modules/ROOT/partials/generated/client_example.adoc --antora --no-header --skip-json --f && cp client_example.go ../../docs/modules/ROOT/examples/"
+
+func Test_ClientSetup(t *testing.T) {
+    // ...
+}
+```
+
+**Option 2: Using go run (no installation required)**
+
+```go
+//go:generate sh -c "go run github.com/productsupcom/code2asciidoc@latest --source client_example.go --out ../../docs/modules/ROOT/partials/generated/client_example.adoc --antora --no-header --skip-json --f && cp client_example.go ../../docs/modules/ROOT/examples/"
 
 func Test_ClientSetup(t *testing.T) {
     // ...
@@ -239,6 +283,43 @@ Then run:
 cd src/my-service/examples
 go generate
 ```
+
+**Note:** Using `go run` ensures everyone on the team uses the same version without requiring manual installation.
+
+### Using as a Go Tool
+
+You can also use `code2asciidoc` as a Go tool in your `tools.go` file for version pinning:
+
+1. Create a `tools.go` file in your project:
+
+```go
+//go:build tools
+// +build tools
+
+package tools
+
+import (
+    _ "github.com/productsupcom/code2asciidoc"
+)
+```
+
+2. Add it to your `go.mod`:
+
+```shell
+go mod tidy
+```
+
+3. Run it using `go run`:
+
+```shell
+go run github.com/productsupcom/code2asciidoc --source examples/example.go --antora --dry-run
+```
+
+This approach ensures:
+- Version is tracked in `go.mod`
+- Everyone on the team uses the same version
+- No manual installation required
+- Works in CI/CD environments
 
 ### Troubleshooting
 
