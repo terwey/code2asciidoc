@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -33,11 +34,40 @@ func newDocOutput(filePath string, goFilename string) docOutput {
 }
 
 func (d *docOutput) getGoInclude() string {
-	return fmt.Sprintf("include::%s[tag=%s,indent=0]", path.Join(d.path, d.goFilename), d.funcName)
+	includePath := d.getIncludePath(d.goFilename)
+	return fmt.Sprintf("include::%s[tag=%s,indent=0]", includePath, d.funcName)
 }
 
 func (d *docOutput) getJsonInclude() string {
-	return fmt.Sprintf("include::%s[tag=%s]", path.Join(d.path, d.jsonFilename), d.funcName)
+	includePath := d.getIncludePath(d.jsonFilename)
+	return fmt.Sprintf("include::%s[tag=%s]", includePath, d.funcName)
+}
+
+func (d *docOutput) getIncludePath(filename string) string {
+	fullPath := path.Join(d.path, filename)
+
+	// Antora mode: use example$ prefix with just the filename
+	if antora {
+		return fmt.Sprintf("example$%s", filename)
+	}
+
+	// Include prefix mode: prepend custom prefix to filename
+	if includePrefix != "" {
+		return fmt.Sprintf("%s%s", includePrefix, filename)
+	}
+
+	// Relative path mode: compute relative path from specified directory
+	if relativeTo != "" {
+		relPath, err := filepath.Rel(relativeTo, fullPath)
+		if err != nil {
+			// If we can't compute relative path, fall back to absolute
+			return fullPath
+		}
+		return relPath
+	}
+
+	// Default: absolute path (original behavior)
+	return fullPath
 }
 
 func (d *docOutput) functionName() string {
@@ -72,14 +102,31 @@ func (d *docOutput) processPost() {
 func (d *docOutput) getAsciiDoc() string {
 	d.processPost()
 	var out strings.Builder
-	out.WriteString("// tag::" + d.funcName + "[]\n")
-	out.WriteString("<<<\n== ")
-	out.WriteString(d.title)
-	out.WriteString("\n")
+
+	// Outer tag wrapper (optional)
+	if !noOuterTags {
+		out.WriteString("// tag::" + d.funcName + "[]\n")
+	}
+
+	// Page break (optional)
+	if !noPageBreaks {
+		out.WriteString("<<<\n")
+	}
+
+	// Section heading (optional)
+	if !noHeadings {
+		out.WriteString("== ")
+		out.WriteString(d.title)
+		out.WriteString("\n")
+	}
+
+	// Documentation body
 	for _, line := range d.body {
 		out.WriteString(line)
 		out.WriteString("\n")
 	}
+
+	// Go code section
 	out.WriteString("\n[#" + strings.ToLower(d.title) + "_" + strings.ToLower(d.funcName) + "_go]")
 	out.WriteString("\n.Go ")
 	out.WriteString(d.title)
@@ -91,7 +138,8 @@ func (d *docOutput) getAsciiDoc() string {
 	out.WriteString("\n----\n")
 	// out.WriteString("====\n")
 
-	if d.apidocs {
+	// JSON section (optional - only if apidocs is set AND skipJSON is false)
+	if d.apidocs && !skipJSON {
 		out.WriteString("\n[#" + strings.ToLower(d.title) + "_" + strings.ToLower(d.funcName) + "_json]")
 		out.WriteString("\n.JSON ")
 		out.WriteString(d.title)
@@ -104,6 +152,7 @@ func (d *docOutput) getAsciiDoc() string {
 		// out.WriteString("====\n")
 	}
 
+	// Post-documentation section
 	if d.postTitle != `` {
 		out.WriteString("\n=== ")
 		out.WriteString(d.postTitle)
@@ -114,17 +163,30 @@ func (d *docOutput) getAsciiDoc() string {
 		}
 		out.WriteString("\n")
 	}
-	out.WriteString("// end::" + d.funcName + "[]\n")
+
+	// Outer tag wrapper end (optional)
+	if !noOuterTags {
+		out.WriteString("// end::" + d.funcName + "[]\n")
+	}
+
 	return out.String()
 }
 
 var (
-	flags      *pflag.FlagSet
-	sourceFile string
-	outFile    string
-	overwrite  bool
-	runTests   bool
-	noheader   bool
+	flags         *pflag.FlagSet
+	sourceFile    string
+	outFile       string
+	overwrite     bool
+	runTests      bool
+	noheader      bool
+	skipJSON      bool
+	antora        bool
+	noPageBreaks  bool
+	noHeadings    bool
+	noOuterTags   bool
+	relativeTo    string
+	includePrefix string
+	dryRun        bool
 )
 
 func init() {
@@ -147,6 +209,30 @@ func init() {
 
 		*--no-header*
 			Do not set a document header and ToC
+
+		*--skip-json*
+			Skip JSON sample sections in output (useful when .apisamples file doesn't exist)
+
+		*--antora*
+			Use Antora-compatible include paths (example$ prefix instead of absolute paths)
+
+		*--no-page-breaks*
+			Do not insert page break markers (<<<) before sections
+
+		*--no-headings*
+			Do not generate section headings from tag names
+
+		*--no-outer-tags*
+			Do not wrap generated content in outer tag markers
+
+		*--relative-to string*
+			Make include paths relative to the specified directory
+
+		*--include-prefix string*
+			Prepend a prefix to all include paths (e.g., 'example$')
+
+		*--dry-run*
+			Preview output to stdout without writing files
 		end::options[]
 	*/
 	flags = pflag.NewFlagSet("AsciiDoc Generator for Distrib", pflag.ContinueOnError)
@@ -156,6 +242,14 @@ func init() {
 	flags.BoolVar(&runTests, "run", false, "Run the tests to produce the output file for the JSON samples. "+
 		"The JSON samples need to be written to a file called the same as the source Go file minus the _test with a .apisamples extension")
 	flags.BoolVar(&noheader, "no-header", false, "Do not set a document header and ToC")
+	flags.BoolVar(&skipJSON, "skip-json", false, "Skip JSON sample sections in output (useful when .apisamples file doesn't exist)")
+	flags.BoolVar(&antora, "antora", false, "Use Antora-compatible include paths (example$ prefix instead of absolute paths)")
+	flags.BoolVar(&noPageBreaks, "no-page-breaks", false, "Do not insert page break markers (<<<) before sections")
+	flags.BoolVar(&noHeadings, "no-headings", false, "Do not generate section headings from tag names")
+	flags.BoolVar(&noOuterTags, "no-outer-tags", false, "Do not wrap generated content in outer tag markers")
+	flags.StringVar(&relativeTo, "relative-to", "", "Make include paths relative to the specified directory")
+	flags.StringVar(&includePrefix, "include-prefix", "", "Prepend a prefix to all include paths (e.g., 'example$')")
+	flags.BoolVar(&dryRun, "dry-run", false, "Preview output to stdout without writing files")
 }
 
 func main() {
@@ -170,6 +264,22 @@ func main() {
 	if sourceFile == "" {
 		fmt.Fprint(os.Stderr, "Sourcefile must be set\n")
 		flags.PrintDefaults()
+		os.Exit(100)
+	}
+
+	// Validate mutually exclusive path-handling flags
+	pathFlagsSet := 0
+	if antora {
+		pathFlagsSet++
+	}
+	if relativeTo != "" {
+		pathFlagsSet++
+	}
+	if includePrefix != "" {
+		pathFlagsSet++
+	}
+	if pathFlagsSet > 1 {
+		fmt.Fprint(os.Stderr, "Error: --antora, --relative-to, and --include-prefix are mutually exclusive. Use only one.\n")
 		os.Exit(100)
 	}
 
@@ -258,6 +368,11 @@ func main() {
 	title = strings.Replace(title, "test.go", "", 1)
 	title = strings.ReplaceAll(title, "_", " ")
 
+	// Handle dry-run mode
+	if dryRun {
+		outFile = ""
+	}
+
 	if outFile != `` {
 		if stat, _ := os.Stat(outFile); stat != nil {
 			if !overwrite {
@@ -275,8 +390,8 @@ func main() {
 		if !noheader {
 			o.WriteString("= " + title + "\n")
 			o.WriteString(":toc: left\n\n")
+			o.WriteString("// THIS FILE IS GENERATED. DO NOT EDIT.\n")
 		}
-		o.WriteString("// THIS FILE IS GENERATED. DO NOT EDIT.\n")
 		for _, out := range docbuf {
 			_, err = o.WriteString(out.getAsciiDoc())
 			if err != nil {
@@ -287,8 +402,8 @@ func main() {
 		if !noheader {
 			fmt.Printf("= " + title + "\n")
 			fmt.Printf(":toc: left\n\n")
+			fmt.Printf("// THIS FILE IS GENERATED. DO NOT EDIT.\n")
 		}
-		fmt.Printf("// THIS FILE IS GENERATED. DO NOT EDIT.\n")
 		for _, out := range docbuf {
 			fmt.Printf("%s\n", out.getAsciiDoc())
 		}

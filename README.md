@@ -11,22 +11,59 @@ When using gRPC best use it in conjunction with [proto2asciidoc](https://github.
 
 ## Usage
 
-**--source string**
-Source file to parse into AsciiDoc, recommended is to set the absolute path.
+### Basic Flags
 
-**--out**
-File to write to, if left empty writes to stdout
+**--source string**
+Source file to parse into AsciiDoc. Can be absolute or relative path.
+
+**--out string**
+File to write to. If left empty, writes to stdout.
 
 **--f**
-Overwrite the existing out file
+Overwrite the existing output file if it exists.
 
 **--run**
 Run the tests to produce the output file for the JSON samples.
 The JSON samples need to be written to a file called the same as
-the source Go file minus the \_test with a .apisamples extension
+the source Go file minus the \_test with a .apisamples extension.
+
+**--dry-run**
+Preview output to stdout without writing files. Useful for testing before committing.
+
+### Output Control Flags
 
 **--no-header**
-Do not set a document header and ToC
+Do not set a document header (title, `:toc:`) and the "THIS FILE IS GENERATED" comment.
+Use this when generating partials to be included in other documents.
+
+**--skip-json**
+Skip JSON sample sections in output. Useful when the `.apisamples` file doesn't exist
+or when you only want to show Go code examples without JSON output.
+
+**--no-page-breaks**
+Do not insert page break markers (`<<<`) before sections.
+
+**--no-headings**
+Do not generate section headings (`== Title`) from tag names.
+
+**--no-outer-tags**
+Do not wrap generated content in outer `// tag::` and `// end::` markers.
+
+### Path Handling Flags (Mutually Exclusive)
+
+These flags control how `include::` paths are generated. Only one can be used at a time.
+
+**--antora**
+Use Antora-compatible include paths with `example$` prefix instead of absolute paths.
+Example: `include::example$file.go[...]` instead of `include::/absolute/path/file.go[...]`
+
+**--include-prefix string**
+Prepend a custom prefix to all include paths.
+Example: `--include-prefix "partials/"` generates `include::partials/file.go[...]`
+
+**--relative-to string**
+Make include paths relative to the specified directory.
+Example: `--relative-to /home/user/project` converts absolute paths to relative ones.
 
 ## Output
 
@@ -101,11 +138,118 @@ You can produce the same output by doing:
 code2asciidoc --source ${PWD}/examples/examples_test.go --out docs/generated/examples.adoc --run --f
 ```
 
-<div class="informalexample">
-
-The `${PWD}` (for Makefile `${CURDIR}`) is very important, it has to be an absolute path for the source.
-
-</div>
-
 The `--run` causes the tool to call the Go test-suite which will produce the
 output files.
+
+## Antora Integration
+
+When integrating with Antora documentation, you need to handle file locations and include paths carefully.
+
+### Directory Structure
+
+For an Antora module, your structure typically looks like:
+
+```
+src/my-service/
+├── examples/
+│   └── client_example.go          # Source examples (Go module)
+├── docs/
+│   ├── antora.yml
+│   └── modules/
+│       └── ROOT/
+│           ├── examples/
+│           │   └── client_example.go    # Copy for Antora resolution
+│           ├── partials/
+│           │   └── generated/
+│           │       └── client_example.adoc  # Generated partial
+│           └── pages/
+│               └── api-guide.adoc       # Main documentation
+```
+
+### Workflow
+
+1. **Write your example** in `src/my-service/examples/client_example.go`:
+
+```go
+func Test_ClientSetup(t *testing.T) {
+    // startapidocs Client Setup
+    // This example shows how to create a new client.
+    // enddocs
+    // tag::ClientSetup[]
+    client := NewClient()
+    // end::ClientSetup[]
+}
+```
+
+2. **Generate the AsciiDoc partial** using the `--antora` flag:
+
+```shell
+code2asciidoc \
+  --source src/my-service/examples/client_example.go \
+  --out src/my-service/docs/modules/ROOT/partials/generated/client_example.adoc \
+  --antora \
+  --no-header \
+  --skip-json \
+  --f
+```
+
+This generates includes like: `include::example$client_example.go[tag=ClientSetup,indent=0]`
+
+3. **Copy the source file** to Antora's examples directory:
+
+```shell
+cp src/my-service/examples/client_example.go \
+   src/my-service/docs/modules/ROOT/examples/
+```
+
+4. **Include the partial** in your documentation:
+
+```asciidoc
+= API Guide
+
+\include::partial$generated/client_example.adoc[tag=ClientSetup]
+```
+
+### Recommended Flags for Antora
+
+For generating **partials** to be included in other documents:
+```shell
+--antora --no-header --skip-json --no-outer-tags
+```
+
+For generating **standalone pages**:
+```shell
+--antora --skip-json
+```
+
+### Automation with go:generate
+
+You can automate generation using `go:generate` directives in your test files:
+
+```go
+//go:generate sh -c "code2asciidoc --source ${PWD}/client_example.go --out ../../docs/modules/ROOT/partials/generated/client_example.adoc --antora --no-header --skip-json --f && cp client_example.go ../../docs/modules/ROOT/examples/"
+
+func Test_ClientSetup(t *testing.T) {
+    // ...
+}
+```
+
+Then run:
+```shell
+cd src/my-service/examples
+go generate
+```
+
+### Troubleshooting
+
+**Error: "target of include not found: example$file.go"**
+- Make sure you copied the source file to `docs/modules/ROOT/examples/`
+- Verify the filename matches exactly (case-sensitive)
+
+**Error: "target of include not found: example$file.apisamples"**
+- Use `--skip-json` flag if you don't need JSON samples
+- Or run with `--run` to generate the `.apisamples` file
+
+**Absolute paths in generated includes**
+- Make sure you're using `--antora` flag
+- Check that you're not also using `--relative-to` or `--include-prefix` (mutually exclusive)
