@@ -21,10 +21,10 @@ This installs the `code2asciidoc` binary to your `$GOPATH/bin` (or `$GOBIN` if s
 
 ### Using go tool
 
-You can also run it directly without installing:
+You can also run it directly without installing using `go tool`:
 
 ```bash
-go run github.com/productsupcom/code2asciidoc@latest --source examples/examples_test.go --dry-run
+go tool github.com/productsupcom/code2asciidoc --source examples/examples_test.go --dry-run
 ```
 
 ### Building from Source
@@ -164,10 +164,10 @@ You can produce the same output by doing:
 code2asciidoc --source examples/examples_test.go --out docs/generated/examples.adoc --run --f
 ```
 
-Or using `go run` without installing:
+Or using `go tool` without installing:
 
 ``` shell
-go run github.com/productsupcom/code2asciidoc@latest --source examples/examples_test.go --out docs/generated/examples.adoc --run --f
+go tool github.com/productsupcom/code2asciidoc --source examples/examples_test.go --out docs/generated/examples.adoc --run --f
 ```
 
 The `--run` causes the tool to call the Go test-suite which will produce the
@@ -268,10 +268,10 @@ func Test_ClientSetup(t *testing.T) {
 }
 ```
 
-**Option 2: Using go run (no installation required)**
+**Option 2: Using go tool (no installation required)**
 
 ```go
-//go:generate sh -c "go run github.com/productsupcom/code2asciidoc@latest --source client_example.go --out ../../docs/modules/ROOT/partials/generated/client_example.adoc --antora --no-header --skip-json --f && cp client_example.go ../../docs/modules/ROOT/examples/"
+//go:generate sh -c "go tool github.com/productsupcom/code2asciidoc --source client_example.go --out ../../docs/modules/ROOT/partials/generated/client_example.adoc --antora --no-header --skip-json --f && cp client_example.go ../../docs/modules/ROOT/examples/"
 
 func Test_ClientSetup(t *testing.T) {
     // ...
@@ -284,7 +284,7 @@ cd src/my-service/examples
 go generate
 ```
 
-**Note:** Using `go run` ensures everyone on the team uses the same version without requiring manual installation.
+**Note:** Using `go tool` ensures everyone on the team uses the same version without requiring manual installation.
 
 ### Using as a Go Tool
 
@@ -309,10 +309,10 @@ import (
 go mod tidy
 ```
 
-3. Run it using `go run`:
+3. Run it using `go tool`:
 
 ```shell
-go run github.com/productsupcom/code2asciidoc --source examples/example.go --antora --dry-run
+go tool github.com/productsupcom/code2asciidoc --source examples/example.go --antora --dry-run
 ```
 
 This approach ensures:
